@@ -108,6 +108,22 @@ class Graph():
                 np.array([5, 6, 7, 8]) - 1,         # right_leg
                 np.array([9, 10, 11, 12]) - 1          # torso
             ]
+        elif self.dataset == 'coco':
+            num_node = 17
+            neighbor_link = [
+                (0, 1), (0, 2), (1, 3), (2, 4),  # head
+                (5, 6), (5, 7), (7, 9), (6, 8), (8, 10),  # arms
+                (11, 12), (5, 11), (6, 12),  # torso
+                (11, 13), (13, 15), (12, 14), (14, 16)  # legs
+            ]
+            connect_joint = np.array([1, 0, 0, 1, 2, 6, 5, 5, 6, 7, 8, 5, 6, 11, 12, 13, 14])
+            parts = [
+                np.array([5, 7, 9]),      # left_arm
+                np.array([6, 8, 10]),     # right_arm
+                np.array([11, 13, 15]),   # left_leg
+                np.array([12, 14, 16]),   # right_leg
+                np.array([0, 1, 2, 3, 4, 5, 6, 11, 12])  # torso
+            ]
         else:
             num_node, neighbor_link, connect_joint, parts = 0, [], [], []
             logging.info('')

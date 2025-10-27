@@ -20,6 +20,7 @@ __attention = {
 }
 
 __structure = {
+    'custom': {'structure': [1,1,1,1], 'block': 'Basic'},
     'b15': {'structure': [1,2,2,2], 'block': 'Basic'},
     'b19': {'structure': [1,2,3,3], 'block': 'Basic'},
     'b23': {'structure': [1,3,4,3], 'block': 'Basic'},

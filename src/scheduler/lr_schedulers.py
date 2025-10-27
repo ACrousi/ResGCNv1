@@ -17,7 +17,8 @@ class Cosine_Scheduler():
     def __init__(self, num_sample, max_epoch, warm_up, **kwargs):
         warm_up_num = warm_up * num_sample
         max_num = max_epoch * num_sample
-        self.eval_interval = lambda epoch: 1 if (epoch+1) > max_epoch - 10 else 5
+        # self.eval_interval = lambda epoch: 1 if (epoch+1) > max_epoch - 10 else 5
+        self.eval_interval = lambda epoch: 1
         self.lr_lambda = lambda num: num / warm_up_num \
                                      if num < warm_up_num else \
                                      0.5 * (np.cos((num - warm_up_num) / (max_num - warm_up_num) * np.pi) + 1)

@@ -193,26 +193,64 @@ class Processor(Initializer):
         logging.info('Successful!')
         logging.info('')
 
-        # Loading Data
-        x, y, names = iter(self.eval_loader).next()
-        location = self.location_loader.load(names) if self.location_loader else []
+        # Initialize lists to store all data
+        all_data, all_labels, all_names, all_out, all_features = [], [], [], [], []
+        all_locations = []
 
-        # Calculating Output
+        # Processing all batches
         self.model.eval()
-        out, feature = self.model(x.float().to(self.device))
+        with torch.no_grad():
+            eval_iter = self.eval_loader if self.no_progress_bar else tqdm(self.eval_loader, dynamic_ncols=True)
+            for num, (x, y, names) in enumerate(eval_iter):
+                # Using GPU
+                x = x.float().to(self.device)
+                
+                # Calculating Output
+                out, feature = self.model(x)
+                
+                # Processing Data
+                data = x.detach().cpu().numpy()
+                label = y.numpy()
+                out_processed = torch.nn.functional.softmax(out, dim=1).detach().cpu().numpy()
+                feature_processed = feature.detach().cpu().numpy()
+                
+                # Loading location data if available
+                location = self.location_loader.load(names) if self.location_loader else []
+                
+                # Collecting all data
+                all_data.append(data)
+                all_labels.append(label)
+                all_names.extend(names)
+                all_out.append(out_processed)
+                all_features.append(feature_processed)
+                if len(location) > 0:
+                    all_locations.append(location)
+                
+                # Progress logging
+                if self.no_progress_bar:
+                    logging.info('Extracting batch: {}/{}'.format(num+1, len(self.eval_loader)))
 
-        # Processing Data
-        data, label = x.numpy(), y.numpy()
-        out = torch.nn.functional.softmax(out, dim=1).detach().cpu().numpy()
+        # Concatenate all batches
+        all_data = np.concatenate(all_data, axis=0)
+        all_labels = np.concatenate(all_labels, axis=0)
+        all_out = np.concatenate(all_out, axis=0)
+        all_features = np.concatenate(all_features, axis=0)
+        if all_locations:
+            all_locations = np.concatenate(all_locations, axis=0)
+        else:
+            all_locations = []
+
+        # Get model weights
         weight = self.model.module.fcn.weight.squeeze().detach().cpu().numpy()
-        feature = feature.detach().cpu().numpy()
+
+        logging.info('Extracted {} samples in total'.format(len(all_data)))
 
         # Saving Data
         if not self.args.debug:
             U.create_folder('./visualization')
             np.savez('./visualization/extraction_{}.npz'.format(self.args.config),
-                data=data, label=label, name=names, out=out, cm=cm,
-                feature=feature, weight=weight, location=location
+                data=all_data, label=all_labels, name=all_names, out=all_out, cm=cm,
+                feature=all_features, weight=weight, location=all_locations
             )
         logging.info('Finish extracting!')
         logging.info('')

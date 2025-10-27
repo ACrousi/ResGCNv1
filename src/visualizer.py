@@ -29,9 +29,14 @@ class Visualizer():
             'giving sth to other person 56', 'touch other person pocket 57', 'handshaking 58',
             'walking towards each other 59', 'walking apart from each other 60'
         ]
+        
+        self.action_names['coco'] = [
+            '12~15', '15~18', '18~24', '24~30', '30up'
+        ]
 
         self.font_sizes = {
             'ntu': 6,
+            'coco': 8,
         }
 
 
@@ -67,27 +72,35 @@ class Visualizer():
         logging.info('')
         data_file = './visualization/extraction_{}.npz'.format(self.args.config)
         if os.path.exists(data_file):
-            data = np.load(data_file)
+            self.all_data = np.load(data_file)
         else:
-            data = None
+            self.all_data = None
             logging.info('')
             logging.error('Error: Do NOT exist this extraction file: {}!'.format(data_file))
             logging.info('Please extract the data first!')
             raise ValueError()
+        
+        # 儲存完整資料以供heatmap儲存功能使用
+        self.all_feature = self.all_data['feature']
+        self.all_label = self.all_data['label']
+        self.all_weight = self.all_data['weight']
+        self.all_out = self.all_data['out']
+        
         logging.info('*********************Video Name************************')
-        logging.info(data['name'][self.args.visualization_sample])
+        logging.info(self.all_data['name'][self.args.visualization_sample])
         logging.info('')
 
-        feature = data['feature'][self.args.visualization_sample,:,:,:,:]
-        self.location = data['location']
+        feature = self.all_data['feature'][self.args.visualization_sample,:,:,:,:]
+        self.location = self.all_data['location']
         if len(self.location) > 0:
             self.location = self.location[self.args.visualization_sample,:,:,:,:]
-        self.data = data['data'][self.args.visualization_sample,:,:,:,:]
-        self.label = data['label']
-        weight = data['weight']
-        out = data['out']
-        cm = data['cm']
-        self.cm = cm.astype('float') / cm.sum(axis=1)[:,np.newaxis]
+        self.data = self.all_data['data'][self.args.visualization_sample,:,:,:,:]
+        self.label = self.all_data['label']
+        weight = self.all_data['weight']
+        out = self.all_data['out']
+        cm = self.all_data['cm']
+        self.cm = cm.astype('int')  # 保持原始計數格式
+        self.cm_normalized = cm.astype('float') / cm.sum(axis=1)[:,np.newaxis]  # 備用的正規化版本
 
         dataset = self.args.dataset.split('-')[0]
         self.names = self.action_names[dataset]
@@ -104,35 +117,53 @@ class Visualizer():
 
 
     def show_action_accuracy(self):
-        cm = self.cm.round(4)
-
+        # 計算準確率：對角線元素除以該行的總數
+        accuracy = self.cm.diagonal() / self.cm.sum(axis=1)
+        
         logging.info('Accuracy of each class:')
-        accuracy = cm.diagonal()
+        logging.info('(Count format: correct_predictions / total_predictions)')
         for i in range(len(accuracy)):
-            logging.info('{}: {}'.format(self.names[i], accuracy[i]))
+            correct_count = self.cm.diagonal()[i]
+            total_count = self.cm.sum(axis=1)[i]
+            logging.info('{}: {:.4f} ({}/{})'.format(self.names[i], accuracy[i], correct_count, total_count))
         logging.info('')
 
         plt.figure()
         plt.bar(self.names, accuracy, align='center')
         plt.xticks(fontsize=10, rotation=90)
         plt.yticks(fontsize=10)
+        plt.ylabel('Accuracy')
+        plt.title('Action Accuracy by Class')
         plt.show()
 
 
     def show_confusion_matrix(self):
-        cm = self.cm.round(2)
-        show_name_x = range(1,len(self.names)+1)
+        # 顯示原始計數的混淆矩陣（true 和 predict 對調版本）
+        cm = self.cm.T  # 將混淆矩陣轉置，對調 true 和 predict
+        show_name_x = self.names
         show_name_y = self.names
 
-        plt.figure()
+        plt.figure(figsize=(10, 8))
         font_size = self.font_size
-        sns.heatmap(cm, cmap=plt.cm.Blues, annot=True, annot_kws={'fontsize':font_size-2}, cbar=False,
-                    square=True, linewidths=0.1, linecolor='black', xticklabels=show_name_x, yticklabels=show_name_y)
-        plt.xticks(fontsize=font_size, rotation=0)
+        
+        # 使用計數格式顯示混淆矩陣，增大數字字體
+        sns.heatmap(cm, cmap=plt.cm.Blues, annot=True, fmt='d', annot_kws={'fontsize':font_size+2},
+                    cbar=True, square=True, linewidths=0.1, linecolor='black',
+                    xticklabels=show_name_x, yticklabels=show_name_y)
+        plt.xticks(fontsize=font_size, rotation=90)
         plt.yticks(fontsize=font_size)
-        plt.xlabel('Index of Predict Classes', fontsize=font_size)
-        plt.ylabel('Index of True Classes', fontsize=font_size)
+        plt.xlabel('Index of True Classes', fontsize=font_size)
+        plt.ylabel('Index of Predict Classes', fontsize=font_size)
+        plt.title('Confusion Matrix (Count Format) - True vs Predict Swapped', fontsize=font_size+2)
+        plt.tight_layout()
         plt.show()
+        
+        # 同時顯示一些統計資訊
+        logging.info('Confusion Matrix Statistics (True vs Predict Swapped):')
+        logging.info('Total samples: {}'.format(cm.sum()))
+        logging.info('Correct predictions: {}'.format(cm.diagonal().sum()))
+        logging.info('Overall accuracy: {:.4f}'.format(cm.diagonal().sum() / cm.sum()))
+        logging.info('')
 
 
     def show_NTU_skeleton(self):
@@ -185,45 +216,148 @@ class Visualizer():
 
 
     def show_heatmap(self):
+        # 檢查是否需要儲存所有validation樣本的heatmap
+        if hasattr(self.args, 'visualization_heatmap_save') and self.args.visualization_heatmap_save:
+            self.save_all_heatmaps()
+            return
+        
+        # --- 數據準備 (與原程式碼相同) ---
         I, C, T, V, M = self.data.shape
         max_frame = T
         for t in range(T):
-            if np.sum(self.data[:,:,t,:,:]) == 0:
+            if np.sum(self.data[:, :, t, :, :]) == 0:
                 max_frame = t
                 break
 
-        plt.figure(1)
-        plt.gcf().subplots_adjust(right=0.8)  # Create room on the right
+        num_persons = self.result.shape[-1]
+        if num_persons == 0:
+            print("沒有可以顯示的結果。")
+            return
 
-        skeleton1 = self.result[:,:,0]
-        heat1 = np.zeros((max_frame//4*4, V))
-        for t in range(max_frame//4):
-            d1 = (skeleton1[t+1,:] - skeleton1[t,:]) / 4
+        fig, axes = plt.subplots(num_persons, 1, figsize=(10, 4 * num_persons), squeeze=False)
+
+        # 顯示 pred_class 和 actural_class
+        plt.suptitle(f'Predicted Class: {self.pred_class}, Actual Class: {self.actural_class}', fontsize=16)
+
+        skeleton1 = self.result[:, :, 0]
+        heat1 = np.zeros((max_frame // 4 * 4, V))
+        for t in range(max_frame // 4):
+            if t + 1 < skeleton1.shape[0]:
+                d1 = (skeleton1[t + 1, :] - skeleton1[t, :]) / 4
+            else:
+                d1 = np.zeros_like(skeleton1[t, :])
             for i in range(4):
-                heat1[t*4+i,:] = skeleton1[t,:] + d1 * i
+                heat1[t * 4 + i, :] = skeleton1[t, :] + d1 * i
+                
+        vmax = np.max(heat1) if np.max(heat1) > 0 else 1
 
-        plt.subplot(211)
-        plt.imshow(heat1.T, cmap=plt.cm.plasma, vmin=0, vmax=np.max(heat1))
-        plt.ylabel('Joints')
-        plt.xlabel('Frames')
-        plt.title('Person 1')
+        ax1 = axes[0, 0]
+        im = ax1.imshow(heat1.T, cmap=plt.cm.plasma, vmin=0, vmax=vmax, aspect='auto')
+        ax1.set_title('Person 1', fontsize=14)
+        ax1.set_ylabel('Joints', fontsize=12)
 
-        if self.result.shape[-1] > 1:
-            skeleton2 = self.result[:,:,1]
-            heat2 = np.zeros((max_frame//4*4, V))
-            for t in range(max_frame//4):
-                d2 = (skeleton2[t+1,:] - skeleton2[t,:]) / 4
+        if num_persons > 1:
+            ax1.tick_params(axis='x', labelbottom=False)
+
+        if num_persons > 1:
+            ax2 = axes[1, 0]
+            skeleton2 = self.result[:, :, 1]
+            heat2 = np.zeros((max_frame // 4 * 4, V))
+            for t in range(max_frame // 4):
+                if t + 1 < skeleton2.shape[0]:
+                    d2 = (skeleton2[t + 1, :] - skeleton2[t, :]) / 4
+                else:
+                    d2 = np.zeros_like(skeleton2[t, :])
                 for i in range(4):
-                    heat2[t*4+i,:] = skeleton2[t,:] + d2 * i
+                    heat2[t * 4 + i, :] = skeleton2[t, :] + d2 * i
+            
+            ax2.imshow(heat2.T, cmap=plt.cm.plasma, vmin=0, vmax=vmax, aspect='auto')
+            ax2.set_title('Person 2', fontsize=14)
+            ax2.set_ylabel('Joints', fontsize=12)
 
-            plt.subplot(212)
-            plt.imshow(heat2.T, cmap=plt.cm.plasma, vmin=0, vmax=np.max(heat1))
-            plt.ylabel('Joints')
-            plt.title('Person 2')
+        axes[-1, 0].set_xlabel('Frames', fontsize=12)
 
-        plt.xlabel('Frames')
-        plt.colorbar(cax=plt.gcf().add_axes([0.85, 0.1, 0.05, 0.8]))
+        # fig.colorbar(im, ax=axes.ravel().tolist(), pad=0.01, shrink=0.8)
+
+        plt.tight_layout()
         plt.show()
+
+    def save_all_heatmaps(self):
+        """儲存所有validation樣本的heatmap到指定資料夾"""
+        save_dir = self.args.visualization_heatmap_save
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+            logging.info(f'Created directory: {save_dir}')
+
+        num_samples = len(self.all_label)
+        logging.info(f'Saving heatmaps for {num_samples} validation samples to {save_dir}')
+
+        for sample_idx in range(num_samples):
+            # 為每個樣本計算所有類別的結果
+            feature = self.all_feature[sample_idx,:,:,:,:]
+            true_class = self.all_label[sample_idx]
+            pred_class = np.argmax(self.all_out[sample_idx])
+            
+            # 獲取樣本名稱
+            sample_name = self.all_data['name'][sample_idx] if 'name' in self.all_data else f'sample_{sample_idx:04d}'
+            # 清理檔案名稱中的非法字符
+            safe_sample_name = "".join(c for c in sample_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+            safe_sample_name = safe_sample_name.replace(' ', '_')
+            
+            # 使用真實類別來計算CAM
+            result = np.einsum('kc,ctvm->ktvm', self.all_weight, feature)
+            result_for_true_class = result[true_class,:,:,:]
+            
+            # 獲取樣本資料
+            sample_data = self.all_data['data'][sample_idx,:,:,:,:]
+            I, C, T, V, M = sample_data.shape
+            
+            # 計算有效幀數
+            max_frame = T
+            for t in range(T):
+                if np.sum(sample_data[:, :, t, :, :]) == 0:
+                    max_frame = t
+                    break
+
+            num_persons = result_for_true_class.shape[-1]
+            if num_persons == 0:
+                logging.warning(f'Sample {sample_idx}: No persons found, skipping')
+                continue
+
+            # 為每個人創建heatmap
+            for person_idx in range(num_persons):
+                skeleton = result_for_true_class[:, :, person_idx]
+                heat = np.zeros((max_frame // 4 * 4, V))
+                
+                for t in range(max_frame // 4):
+                    if t + 1 < skeleton.shape[0]:
+                        d = (skeleton[t + 1, :] - skeleton[t, :]) / 4
+                    else:
+                        d = np.zeros_like(skeleton[t, :])
+                    for i in range(4):
+                        heat[t * 4 + i, :] = skeleton[t, :] + d * i
+
+                # 創建並儲存圖片
+                plt.figure(figsize=(12, 6))
+                vmax = np.max(heat) if np.max(heat) > 0 else 1
+                
+                plt.imshow(heat.T, cmap=plt.cm.plasma, vmin=0, vmax=vmax, aspect='auto')
+                plt.colorbar(label='Attention Weight')
+                plt.title(f'{safe_sample_name} Person {person_idx+1}\nTrue Class: {true_class+1}, Pred Class: {pred_class+1}', fontsize=14)
+                plt.xlabel('Frames', fontsize=12)
+                plt.ylabel('Joints', fontsize=12)
+                
+                # 儲存檔案 - 包含data name
+                filename = f'{safe_sample_name}_true_{true_class+1}_pred_{pred_class+1}.png'
+                filepath = os.path.join(save_dir, filename)
+                plt.savefig(filepath, dpi=150, bbox_inches='tight')
+                plt.close()
+
+            if (sample_idx + 1) % 10 == 0:
+                logging.info(f'Processed {sample_idx + 1}/{num_samples} samples')
+
+        logging.info(f'All heatmaps saved to {save_dir}')
+
 
 
     def show_wrong_sample(self):

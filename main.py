@@ -64,6 +64,7 @@ def init_parameters():
     parser.add_argument('--visualization_class', '-vc', type=int, default=0, help='Class: 1 ~ 60, 0 means true class')
     parser.add_argument('--visualization_sample', '-vs', type=int, default=0, help='Sample: 0 ~ batch_size-1')
     parser.add_argument('--visualization_frames', '-vf', type=int, nargs='+', default=[], help='Frame: 0 ~ max_frame-1')
+    parser.add_argument('--visualization_heatmap_save', '-vhs', type=str, default='./heatmaps_output', help='Path to save all validation heatmaps')
 
     # Dataloader
     parser.add_argument('--dataset', '-d', type=str, default='', help='Select dataset')
@@ -86,11 +87,11 @@ def init_parameters():
 
 def update_parameters(parser, args):
     if os.path.exists('./configs/{}.yaml'.format(args.config)):
-        with open('./configs/{}.yaml'.format(args.config), 'r') as f:
+        with open('./configs/{}.yaml'.format(args.config), 'r', encoding='utf-8') as f:
             try:
                 yaml_arg = yaml.load(f, Loader=yaml.FullLoader)
             except:
-                yaml_arg = yaml.load(f)
+                yaml_arg = yaml.load(f, Loader=yaml.FullLoader)
             default_arg = vars(args)
             for k in yaml_arg.keys():
                 if k not in default_arg.keys():

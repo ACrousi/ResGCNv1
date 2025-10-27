@@ -4,6 +4,7 @@ from .graph import Graph
 from .preprocessed import Preprocess_Feeder
 from .ntu import NTU_Feeder, NTU_Location_Feeder
 from .cmu import CMU_Feeder
+from .coco import Feeder as COCO_Feeder
 
 
 __feeder = {
@@ -14,6 +15,7 @@ __feeder = {
     'ntu-preprocess': Preprocess_Feeder,
     'kinetics': Preprocess_Feeder,
     'cmu': CMU_Feeder,
+    'coco': COCO_Feeder,
 }
 
 __shape = {
@@ -24,6 +26,7 @@ __shape = {
     'ntu-preprocess': [3,3,300,25,2],
     'kinetics': [3,3,300,18,2],
     'cmu': [3,6,50,26,1],
+    'coco': [3,6,300,17,1],
 }
 
 __class = {
@@ -33,6 +36,7 @@ __class = {
     'ntu-xset120': 120,
     'kinetics': 400,
     'cmu': 8,
+    'coco': 5,
 }
 
 def create(debug, dataset, path, preprocess=False, **kwargs):

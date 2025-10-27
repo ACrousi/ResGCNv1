@@ -60,7 +60,7 @@ class Initializer():
                 meminfo = pynvml.nvmlDeviceGetMemoryInfo(handle)
                 memused = meminfo.used / 1024 / 1024
                 logging.info('GPU-{} used: {}MB'.format(i, memused))
-                if memused > 1000:
+                if memused > 4000:  # 增加記憶體限制到4GB
                     pynvml.nvmlShutdown()
                     logging.info('')
                     logging.error('GPU-{} is occupied!'.format(i))
